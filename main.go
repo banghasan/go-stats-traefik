@@ -46,6 +46,12 @@ type PathStats struct {
 	Years      []YearStats `json:"years"`
 }
 
+// Response structure for the new format
+type PathYears struct {
+	PathPrefix string `json:"pathprefix"`
+	Years      []int  `json:"years"`
+}
+
 type RootResponse struct {
 	Data []PathStats `json:"data"`
 }
@@ -237,10 +243,9 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.DB.Query(`
-		SELECT path, year, SUM(total_hits) as year_total
+		SELECT DISTINCT path, year
 		FROM stats
-		GROUP BY path, year
-		ORDER BY path, year DESC
+		ORDER BY path, year
 	`)
 	if err != nil {
 		jsonError(w, "Database error", http.StatusInternalServerError)
@@ -249,46 +254,28 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	// Aggregate data
-	statsMap := make(map[string][]YearStats)
+	statsMap := make(map[string][]int)
 	for rows.Next() {
 		var path string
 		var year int
-		var total int
-		if err := rows.Scan(&path, &year, &total); err != nil {
+		if err := rows.Scan(&path, &year); err != nil {
 			continue
 		}
 
-		// Calculate average (hits per day? or per month?)
-		// The prompt example shows "avg: 21" for "total: 1100".
-		// 1100 / 21 ~= 52. Maybe avg per week? Or per month (1100/12 ~ 90).
-		// Let's assume daily average for now: Total / 365 (or days passed).
-		// OR avg per month: Total / 12.
-		// Let's stick to a simple Avg logic: Total hits / 12 months (or months recorded).
-		// Actually, let's query count of months to be accurate.
-
-		// For simplicity/performance in this loop, we'll rough calc or just use Total/12 for now.
-		// Prompt doesn't specify formula. "avg" usually implies per unit time.
-		// If it's real-time, maybe hits/day?
-		// Let's use simple logic: AVG = Total / 12 (months) for simplicity unless we count specific months.
-		avg := math.Ceil(float64(total) / 12.0)
-
-		statsMap[path] = append(statsMap[path], YearStats{
-			Year:  year,
-			Total: total,
-			Avg:   avg, // Simple placeholder logic
-		})
+		statsMap[path] = append(statsMap[path], year)
 	}
 
-	resp := RootResponse{Data: make([]PathStats, 0)}
+	// Convert map to slice of PathYears
+	var result []PathYears
 	for path, years := range statsMap {
-		resp.Data = append(resp.Data, PathStats{
+		result = append(result, PathYears{
 			PathPrefix: path,
 			Years:      years,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(result)
 }
 
 // statsYearHandler handles GET /api/stats/:year

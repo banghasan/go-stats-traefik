@@ -126,7 +126,7 @@ segments instead of individual endpoints.
 
 #### 1. Get All Stats
 
-Returns a list of all paths and their yearly summaries.
+Returns a list of all paths and their available years.
 
 ```bash
 curl http://localhost:8080/api/stats
@@ -135,16 +135,20 @@ curl http://localhost:8080/api/stats
 **Response:**
 
 ```json
-{
-    "data": [
-        {
-            "pathprefix": "/api/v1/users",
-            "years": [
-                { "year": 2026, "total": 1500, "avg": 125 }
-            ]
-        }
-    ]
-}
+[
+    {
+        "pathprefix": "/",
+        "years": [2025, 2026]
+    },
+    {
+        "pathprefix": "/v1",
+        "years": [2026]
+    },
+    {
+        "pathprefix": "/v3",
+        "years": [2025, 2026, 2027]
+    }
+]
 ```
 
 #### 2. Get Yearly Details
@@ -161,7 +165,7 @@ curl http://localhost:8080/api/stats/2026
 {
     "data": [
         {
-            "pathprefix": "/api/v1/users",
+            "pathprefix": "/v3",
             "year": 2026,
             "total": 1500,
             "avg": 125,
