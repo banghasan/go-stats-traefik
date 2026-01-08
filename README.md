@@ -122,97 +122,11 @@ This endpoint is useful for:
 This aggregation allows you to track traffic by API version or major route
 segments instead of individual endpoints.
 
-### Check Statistics
+---
 
-#### 1. Get All Stats
+## API Reference
 
-Returns a list of all paths and their available years.
-
-```bash
-curl http://localhost:8080/api/stats
-```
-
-**Response:**
-
-```json
-[
-    {
-        "pathprefix": "/",
-        "years": [2025, 2026]
-    },
-    {
-        "pathprefix": "/v1",
-        "years": [2026]
-    },
-    {
-        "pathprefix": "/v3",
-        "years": [2025, 2026, 2027]
-    }
-]
-```
-
-#### 2. Get Yearly Details
-
-Returns detailed monthly statistics for a specific year.
-
-```bash
-curl http://localhost:8080/api/stats/2026
-```
-
-**Response:**
-
-```json
-{
-    "data": [
-        {
-            "pathprefix": "/v3",
-            "year": 2026,
-            "total": 1500,
-            "avg": 125,
-            "months": [
-                { "month": 1, "total": 500, "avg": 16.1 },
-                { "month": 2, "total": 1000, "avg": 35.7 }
-            ]
-        }
-    ]
-}
-```
-
-#### 3. Get Path-Specific Data
-
-Returns monthly statistics for a specific path prefix.
-
-```bash
-curl http://localhost:8080/api/stats/data/:pathprefix
-```
-
-With optional year parameter:
-
-```bash
-curl http://localhost:8080/api/stats/data/:pathprefix?year=2026
-```
-
-**Response:**
-
-```json
-{
-    "data": [
-        {
-            "pathprefix": "/v2",
-            "year": 2026,
-            "total": 1,
-            "avg": 1,
-            "months": [
-                {
-                    "month": 1,
-                    "total": 1,
-                    "avg": 1
-                }
-            ]
-        }
-    ]
-}
-```
+For complete API documentation, including all endpoints, parameters, and response formats, see the [API Documentation](API.md).
 
 ---
 
