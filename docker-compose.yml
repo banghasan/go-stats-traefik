@@ -5,12 +5,12 @@ services:
     container_name: go-stats-traefik
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "9000:80"
     volumes:
       - ./data:/data
     environment:
       - TZ=Asia/Jakarta
-    command: [ "-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db" ]
+    command: [ "-host", "0.0.0.0", "-port", "80", "-db", "/data/stats.db" ]
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/health || exit 1" ]
       interval: 30s
