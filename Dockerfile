@@ -38,20 +38,11 @@ RUN chmod +x /app/go-stats-traefik
 # Expose default port
 EXPOSE 8080
 
-# Create non-root user
-RUN addgroup -S -g 65532 nonroot && \
-    adduser -S -u 65532 -G nonroot nonroot
-
-# Change ownership of the binary
-RUN chown nonroot:nonroot /app/go-stats-traefik
-
-# Ensure data directory exists with proper permissions
+# Create data directory with proper permissions
 RUN mkdir -p /data && \
-    chown -R nonroot:nonroot /data
+    chmod 755 /data
 
-# Switch to non-root user
-USER nonroot:nonroot
-
+# Keep running as root to avoid permission issues
 # Command
 ENTRYPOINT ["/app/go-stats-traefik"]
 CMD ["-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db"]
