@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -235,9 +236,9 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.DB.Query(`
-		SELECT path, year, SUM(total_hits) as year_total 
-		FROM stats 
-		GROUP BY path, year 
+		SELECT path, year, SUM(total_hits) as year_total
+		FROM stats
+		GROUP BY path, year
 		ORDER BY path, year DESC
 	`)
 	if err != nil {
@@ -268,7 +269,7 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 		// Prompt doesn't specify formula. "avg" usually implies per unit time.
 		// If it's real-time, maybe hits/day?
 		// Let's use simple logic: AVG = Total / 12 (months) for simplicity unless we count specific months.
-		avg := float64(total) / 12.0
+		avg := math.Ceil(float64(total) / 12.0)
 
 		statsMap[path] = append(statsMap[path], YearStats{
 			Year:  year,
@@ -305,8 +306,8 @@ func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.DB.Query(`
-		SELECT path, month, total_hits 
-		FROM stats 
+		SELECT path, month, total_hits
+		FROM stats
 		WHERE year = ?
 		ORDER BY path, month ASC
 	`, year)
@@ -337,7 +338,7 @@ func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Avg per month (hits per day in that month?)
 		// Let's assume avg hits/day in that month (30 days approx)
-		avg := float64(total) / 30.0
+		avg := math.Ceil(float64(total) / 30.0)
 
 		dataMap[path].Months = append(dataMap[path].Months, MonthStats{
 			Month: month,
@@ -350,7 +351,7 @@ func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 	resp := YearResponse{Data: make([]YearDetailStats, 0)}
 	for path, temp := range dataMap {
 		// Calculate yearly avg (e.g., total / 12)
-		yearAvg := float64(temp.Total) / 12.0
+		yearAvg := math.Ceil(float64(temp.Total) / 12.0)
 
 		resp.Data = append(resp.Data, YearDetailStats{
 			PathPrefix: path,
