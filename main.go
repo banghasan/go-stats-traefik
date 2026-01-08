@@ -115,9 +115,9 @@ func main() {
 	mux.HandleFunc("/", app.middlewareHandler)
 
 	// API Endpoints
-	mux.HandleFunc("/api/data", app.statsRootHandler)       // GET /api/data (was /api/stats)
-	mux.HandleFunc("/api/stats", app.statsSummaryHandler)   // GET /api/stats (new format)
-	mux.HandleFunc("/api/stats/", app.statsYearHandler)     // GET /api/stats/:year
+	mux.HandleFunc("/api/stats/data", app.statsRootHandler)  // GET /api/stats/data (was /api/data)
+	mux.HandleFunc("/api/stats", app.statsSummaryHandler)    // GET /api/stats (new format)
+	mux.HandleFunc("/api/stats/", app.statsYearHandler)      // GET /api/stats/:year
 	mux.HandleFunc("/api/stats/data/", app.statsDataHandler) // GET /api/stats/data/:pathprefix?year=:year
 
 	// Start Server
@@ -236,9 +236,9 @@ func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// statsRootHandler handles GET /api/data
+// statsRootHandler handles GET /api/stats/data
 func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/data" && r.URL.Path != "/api/data/" {
+	if r.URL.Path != "/api/stats/data" && r.URL.Path != "/api/stats/data/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -372,8 +372,8 @@ type StatsSummary struct {
 }
 
 type StatsSummaryResponse struct {
-	Total int             `json:"total"`
-	Data  []StatsSummary  `json:"data"`
+	Total int            `json:"total"`
+	Data  []StatsSummary `json:"data"`
 }
 
 // statsSummaryHandler handles GET /api/stats

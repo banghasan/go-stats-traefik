@@ -57,7 +57,7 @@ Get summary statistics for all path prefixes including total hits across all yea
 ```
 
 ### 3. Path and Year Combinations
-#### GET `/api/data`
+#### GET `/api/stats/data`
 Get all unique path prefixes and available years in the database.
 
 **Response:**
@@ -164,7 +164,7 @@ GET /api/stats
 
 ### Path and Year Combinations
 ```curlie
-GET /api/data
+GET /api/stats/data
 ```
 
 ### Yearly Details for 2026
