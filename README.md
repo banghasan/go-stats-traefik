@@ -174,6 +174,42 @@ curl http://localhost:8080/api/stats/2026
 }
 ```
 
+#### 3. Get Path-Specific Data
+
+Returns monthly statistics for a specific path prefix.
+
+```bash
+curl http://localhost:8080/api/stats/data/:pathprefix
+```
+
+With optional year parameter:
+
+```bash
+curl http://localhost:8080/api/stats/data/:pathprefix?year=2026
+```
+
+**Response:**
+
+```json
+{
+    "data": [
+        {
+            "pathprefix": "/v2",
+            "year": 2026,
+            "total": 1,
+            "avg": 1,
+            "months": [
+                {
+                    "month": 1,
+                    "total": 1,
+                    "avg": 1
+                }
+            ]
+        }
+    ]
+}
+```
+
 ---
 
 ## Traefik Integration (ForwardAuth)

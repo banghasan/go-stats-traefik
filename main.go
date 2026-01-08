@@ -109,8 +109,9 @@ func main() {
 	mux.HandleFunc("/", app.middlewareHandler)
 
 	// API Endpoints
-	mux.HandleFunc("/api/stats", app.statsRootHandler)  // GET /api/stats
-	mux.HandleFunc("/api/stats/", app.statsYearHandler) // GET /api/stats/:year
+	mux.HandleFunc("/api/stats", app.statsRootHandler)      // GET /api/stats
+	mux.HandleFunc("/api/stats/", app.statsYearHandler)     // GET /api/stats/:year
+	mux.HandleFunc("/api/stats/data/", app.statsDataHandler) // GET /api/stats/data/:pathprefix?year=:year
 
 	// Start Server
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
@@ -374,6 +375,85 @@ func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// statsDataHandler handles GET /api/stats/data/:pathprefix?year=:year
+func (app *App) statsDataHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract pathprefix from URL
+	urlParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(urlParts) < 4 { // /api/stats/data/:pathprefix
+		jsonError(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+
+	pathPrefix := "/" + urlParts[3]
+
+	// Get year from query parameter, default to current year
+	yearStr := r.URL.Query().Get("year")
+	var year int
+
+	if yearStr == "" {
+		// Default to current year
+		year = time.Now().Year()
+	} else {
+		var err error
+		year, err = strconv.Atoi(yearStr)
+		if err != nil {
+			jsonError(w, "Invalid year format", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Query data for specific path and year
+	rows, err := app.DB.Query(`
+		SELECT month, total_hits
+		FROM stats
+		WHERE path = ? AND year = ?
+		ORDER BY month ASC
+	`, pathPrefix, year)
+
+	if err != nil {
+		jsonError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	// Accumulate data for the path
+	total := 0
+	months := []MonthStats{}
+
+	for rows.Next() {
+		var month int
+		var totalHits int
+		if err := rows.Scan(&month, &totalHits); err != nil {
+			continue
+		}
+
+		// Calculate monthly avg (hits per day in that month)
+		avg := math.Ceil(float64(totalHits) / 30.0)
+
+		months = append(months, MonthStats{
+			Month: month,
+			Total: totalHits,
+			Avg:   avg,
+		})
+
+		total += totalHits
+	}
+
+	// Calculate yearly avg
+	yearAvg := math.Ceil(float64(total) / 12.0)
+
+	resp := YearDetailStats{
+		PathPrefix: pathPrefix,
+		Year:       year,
+		Total:      total,
+		Avg:        yearAvg,
+		Months:     months,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(YearResponse{Data: []YearDetailStats{resp}})
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
