@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM golang:alpine AS builder
+FROM docker.io/library/golang:alpine AS builder
 
 WORKDIR /build
 
@@ -13,7 +13,7 @@ RUN go mod download
 # Copy source code
 COPY main.go ./
 
-# Build binary with optimization flags
+# Build binary with CGO enabled (required for SQLite support)
 RUN CGO_ENABLED=1 GOOS=linux go build \
     -ldflags="-w -s" \
     -a \
@@ -21,22 +21,31 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
     -o go-stats-traefik \
     .
 
-# Stage 2: Runtime (distroless)
-FROM gcr.io/distroless/base-debian12
+# Stage 2: Runtime (alpine for better compatibility)
+FROM alpine:latest
 
 WORKDIR /app
 
-# Copy ca-certificates and timezone data
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+# Install ca-certificates for HTTPS support
+RUN apk --no-cache add ca-certificates tzdata
 
-# Copy binary
+# Copy the binary
 COPY --from=builder /build/go-stats-traefik /app/go-stats-traefik
+
+# Make binary executable
+RUN chmod +x /app/go-stats-traefik
 
 # Expose default port
 EXPOSE 8080
 
-# Run as non-root user (distroless uses UID 65532)
+# Create non-root user
+RUN addgroup -S -g 65532 nonroot && \
+    adduser -S -u 65532 -G nonroot nonroot
+
+# Change ownership of the binary
+RUN chown nonroot:nonroot /app/go-stats-traefik
+
+# Switch to non-root user
 USER nonroot:nonroot
 
 # Command
