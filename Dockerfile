@@ -3,8 +3,8 @@ FROM golang:alpine AS builder
 
 WORKDIR /build
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies (including GCC for CGO)
+RUN apk add --no-cache git ca-certificates tzdata build-base musl-dev
 
 # Copy go mod files
 COPY go.mod go.sum ./
