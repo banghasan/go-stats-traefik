@@ -115,7 +115,8 @@ func main() {
 	mux.HandleFunc("/", app.middlewareHandler)
 
 	// API Endpoints
-	mux.HandleFunc("/api/stats", app.statsRootHandler)      // GET /api/stats
+	mux.HandleFunc("/api/data", app.statsRootHandler)       // GET /api/data (was /api/stats)
+	mux.HandleFunc("/api/stats", app.statsSummaryHandler)   // GET /api/stats (new format)
 	mux.HandleFunc("/api/stats/", app.statsYearHandler)     // GET /api/stats/:year
 	mux.HandleFunc("/api/stats/data/", app.statsDataHandler) // GET /api/stats/data/:pathprefix?year=:year
 
@@ -235,9 +236,9 @@ func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// statsRootHandler handles GET /api/stats
+// statsRootHandler handles GET /api/data
 func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/stats" && r.URL.Path != "/api/stats/" {
+	if r.URL.Path != "/api/data" && r.URL.Path != "/api/data/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -358,6 +359,63 @@ func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 		// We'll return empty list as standard API behavior, but if strict:
 		// jsonError(w, "No data for this year", http.StatusNotFound)
 		// Let's return empty Data array as initialized.
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// StatsSummary represents the new format for /api/stats
+type StatsSummary struct {
+	PathPrefix string `json:"pathprefix"`
+	Total      int    `json:"total"`
+}
+
+type StatsSummaryResponse struct {
+	Total int             `json:"total"`
+	Data  []StatsSummary  `json:"data"`
+}
+
+// statsSummaryHandler handles GET /api/stats
+func (app *App) statsSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/api/stats" {
+		http.NotFound(w, r)
+		return
+	}
+
+	rows, err := app.DB.Query(`
+		SELECT path, SUM(total_hits) as total
+		FROM stats
+		GROUP BY path
+		ORDER BY path
+	`)
+	if err != nil {
+		jsonError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var result []StatsSummary
+	totalAll := 0
+
+	for rows.Next() {
+		var path string
+		var total int
+		if err := rows.Scan(&path, &total); err != nil {
+			continue
+		}
+
+		result = append(result, StatsSummary{
+			PathPrefix: path,
+			Total:      total,
+		})
+
+		totalAll += total
+	}
+
+	resp := StatsSummaryResponse{
+		Total: totalAll,
+		Data:  result,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
