@@ -47,7 +47,7 @@ By default:
 
 ```bash
 ./bin/go-stats-traefik --version
-# Output: API Stats Version 1.0.0
+# Output: API Stats Version 1.0.1
 ```
 
 ### 3. Run with Docker
@@ -89,7 +89,7 @@ curl http://localhost:8080/health
 ```json
 {
     "status": "healthy",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "timestamp": 1704672000
 }
 ```

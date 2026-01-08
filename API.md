@@ -26,7 +26,7 @@ Check if the service is running and healthy.
 ```
 {
   "status": "healthy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "timestamp": 1767841066
 }
 ```
