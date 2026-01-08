@@ -15,6 +15,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// AppVersion represents the current application version
+const AppVersion = "1.0.0"
+
+// BuildInfo represents build information (can be set during build)
+var BuildInfo = ""
+
 // Config holds the application configuration
 type Config struct {
 	Host   string
@@ -85,7 +91,11 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Println("API Stats Version 1.0")
+		if BuildInfo != "" {
+			fmt.Printf("API Stats Version %s (Build: %s)\n", AppVersion, BuildInfo)
+		} else {
+			fmt.Printf("API Stats Version %s\n", AppVersion)
+		}
 		return
 	}
 
@@ -180,11 +190,15 @@ func (app *App) worker() {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"status":    "healthy",
-		"version":   "1.0",
+		"version":   AppVersion,
 		"timestamp": time.Now().Unix(),
-	})
+	}
+	if BuildInfo != "" {
+		response["build"] = BuildInfo
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 // extractPathPrefix extracts the first segment of a path

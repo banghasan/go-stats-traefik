@@ -14,8 +14,9 @@ RUN go mod download
 COPY main.go ./
 
 # Build binary with CGO enabled (required for SQLite support)
+ARG BUILD_VERSION=1.0.0
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-w -s" \
+    -ldflags="-X 'main.AppVersion=${BUILD_VERSION}' -w -s" \
     -a \
     -installsuffix cgo \
     -o go-stats-traefik \
