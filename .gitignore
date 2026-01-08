@@ -1,0 +1,17 @@
+# Binaries
+/bin
+/bak
+apistats
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log
+
+# System
+.DS_Store
+
+# Verification scripts (optional)
+# verify.sh
