@@ -1,6 +1,7 @@
 # Binaries
 /bin
 /bak
+go-stats-traefik
 apistats
 
 # Database

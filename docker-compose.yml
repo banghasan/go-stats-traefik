@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  # Stats Service
+  go-stats-traefik:
+    image: ghcr.io/banghasan/go-stats-traefik:latest
+    container_name: go-stats-traefik
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=Asia/Jakarta
+    command: [ "-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db" ]
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+  # Example: Your Application with Traefik
+  # Uncomment and modify as needed
+  # my-app:
+  #   image: nginxdemos/hello
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
+  #     - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080"
+  #     - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
+  #     - "traefik.http.routers.my-app.middlewares=stats-logger"
+
+networks:
+  default:
+    name: traefik-stats

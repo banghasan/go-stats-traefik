@@ -23,13 +23,13 @@ SQLite. Designed to be used as a **Traefik ForwardAuth Middleware**.
 go mod tidy
 
 # Build binary to bin/ folder
-go build -o bin/apistats
+go build -o bin/go-stats-traefik
 ```
 
 ### 2. Run Locally
 
 ```bash
-./bin/apistats
+./bin/go-stats-traefik
 ```
 
 By default:
@@ -46,8 +46,32 @@ By default:
 **Check Version:**
 
 ```bash
-./bin/apistats --version
+./bin/go-stats-traefik --version
 # Output: API Stats Version 1.0
+```
+
+### 3. Run with Docker
+
+Pull the pre-built image from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/banghasan/go-stats-traefik:latest
+```
+
+Run with Docker:
+
+```bash
+docker run -d \
+  --name go-stats-traefik \
+  -p 8080:8080 \
+  -v $(pwd)/data:/data \
+  ghcr.io/banghasan/go-stats-traefik:latest
+```
+
+Or use Docker Compose (`docker-compose.yml` provided):
+
+```bash
+docker-compose up -d
 ```
 
 ---
@@ -81,9 +105,22 @@ This endpoint is useful for:
 ## API Reference
 
 > **Note**: The application automatically extracts and stores only the **first
-> path segment** (prefix) from incoming requests.\
-> For example: `/v3/cal/today` is stored as `/v3`, `/v2/quran/ayat/acak` is
-> stored as `/v2`.
+> path segment** (prefix) from incoming requests.
+
+### Path Prefix Extraction Examples
+
+| Original Path (X-Forwarded-Uri) | Stored As | Description                  |
+| ------------------------------- | --------- | ---------------------------- |
+| `/v3/cal/today`                 | `/v3`     | Extracts first segment       |
+| `/v3/tools/ip`                  | `/v3`     | Same prefix, combined stats  |
+| `/v2/quran/ayat/acak`           | `/v2`     | Different prefix             |
+| `/v2/quran/surah/1`             | `/v2`     | Same prefix, combined stats  |
+| `/api/users/123`                | `/api`    | Works with any path          |
+| `/`                             | `/`       | Root path stored as-is       |
+| `/hello`                        | `/hello`  | Single segment kept complete |
+
+This aggregation allows you to track traffic by API version or major route
+segments instead of individual endpoints.
 
 ### Check Statistics
 
@@ -155,14 +192,13 @@ version: "3.8"
 
 services:
     # 1. The Stats Service
-    apistats:
-        build: .
-        image: my-apistats:latest
-        container_name: apistats
+    go-stats-traefik:
+        image: ghcr.io/banghasan/go-stats-traefik:latest
+        container_name: go-stats-traefik
         restart: unless-stopped
         volumes:
             - ./data:/data # Persist SQLite database
-        command: /app/apistats -db /data/stats.db
+        command: ["-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db"]
 
     # 2. Your Application (The one you want to track)
     my-app:
@@ -172,7 +208,7 @@ services:
             - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
 
             # Define the Middleware
-            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://apistats:8080"
+            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080"
             # IMPORTANT: Ensure Traefik passes the URI
             - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
 
@@ -190,7 +226,7 @@ http:
     middlewares:
         stats-logger:
             forwardAuth:
-                address: "http://apistats:8080"
+                address: "http://go-stats-traefik:8080"
                 trustForwardHeader: true
 
     routers:
