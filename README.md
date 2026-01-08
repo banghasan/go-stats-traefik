@@ -80,6 +80,11 @@ This endpoint is useful for:
 
 ## API Reference
 
+> **Note**: The application automatically extracts and stores only the **first
+> path segment** (prefix) from incoming requests.\
+> For example: `/v3/cal/today` is stored as `/v3`, `/v2/quran/ayat/acak` is
+> stored as `/v2`.
+
 ### Check Statistics
 
 #### 1. Get All Stats

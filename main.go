@@ -178,33 +178,47 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// extractPathPrefix extracts the first segment of a path
+// Examples: /v3/cal/today -> /v3, /v2/quran/ayat -> /v2, / -> /
+func extractPathPrefix(fullPath string) string {
+	if fullPath == "" || fullPath == "/" {
+		return "/"
+	}
+
+	// Remove leading slash and split
+	trimmed := strings.TrimPrefix(fullPath, "/")
+	parts := strings.Split(trimmed, "/")
+
+	if len(parts) == 0 || parts[0] == "" {
+		return "/"
+	}
+
+	// Return first segment with leading slash
+	return "/" + parts[0]
+}
+
 // middlewareHandler handles the Traefik ForwardAuth request
 func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	// Identify PathPrefix
 	// Traefik sends "X-Forwarded-Uri" or "X-Replaced-Path"
-	path := r.Header.Get("X-Forwarded-Uri")
-	if path == "" {
-		path = r.Header.Get("X-Replaced-Path")
+	fullPath := r.Header.Get("X-Forwarded-Uri")
+	if fullPath == "" {
+		fullPath = r.Header.Get("X-Replaced-Path")
 	}
-	if path == "" {
+	if fullPath == "" {
 		// Fallback or ignore? For now, we can try RequestURI if direct hit (testing)
 		// But strictly for middleware, if missing, we might proceed or log "unknown"
 		// If used strictly as ForwardAuth, we must return 200 to allow traffic.
-		path = "unknown"
+		fullPath = "unknown"
 	}
 
-	// Clean path to extract simple prefix if needed, or keeping full URI?
-	// The prompt implies "PathPrefix", but usually X-Forwarded-Uri is full path.
-	// We'll store the full path or maybe just the first segment?
-	// Prompt says: "Traefik menerima request pada PathPrefix (/, /v2, /v3)."
-	// Ideally we want to aggregate by these prefixes.
-	// For simplicity, we just store what we get. The user can refine aggregation in SQL if needed,
-	// or we can implement basic normalization here.
-	// Let's store the raw path for now as per "Menyimpan 'path'".
+	// Extract only the first path segment (prefix)
+	// e.g., /v3/cal/today -> /v3, /v2/quran/ayat/acak -> /v2
+	pathPrefix := extractPathPrefix(fullPath)
 
 	// Non-blocking send
 	select {
-	case app.HitsChannel <- StatsHit{Path: path, Time: time.Now()}:
+	case app.HitsChannel <- StatsHit{Path: pathPrefix, Time: time.Now()}:
 	default:
 		// Channel full, drop metric to avoid blocking traffic
 		log.Println("Stats channel full, dropping hit")
