@@ -45,6 +45,10 @@ RUN addgroup -S -g 65532 nonroot && \
 # Change ownership of the binary
 RUN chown nonroot:nonroot /app/go-stats-traefik
 
+# Ensure data directory exists with proper permissions
+RUN mkdir -p /data && \
+    chown -R nonroot:nonroot /data
+
 # Switch to non-root user
 USER nonroot:nonroot
 

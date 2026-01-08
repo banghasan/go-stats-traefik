@@ -8,6 +8,7 @@ services:
       - "9000:8080"
     volumes:
       - ./data:/data
+      # Ensure proper permissions by copying database file if needed
     environment:
       - TZ=Asia/Jakarta
     command: ["-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db"]
@@ -18,20 +19,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
-
-networks:
-  default:
-    name: traefik-stats
-  # Example: Your Application with Traefik
-  # Uncomment and modify as needed
-  # my-app:
-  #   image: nginxdemos/hello
-  #   labels:
-  #     - "traefik.enable=true"
-  #     - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
-  #     - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080"
-  #     - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
-  #     - "traefik.http.routers.my-app.middlewares=stats-logger"
 
 networks:
   default:
