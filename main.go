@@ -30,6 +30,7 @@ type Config struct {
 
 // StatsHit represents a single traffic hit to be recorded
 type StatsHit struct {
+	Host string
 	Path string
 	Time time.Time
 }
@@ -58,8 +59,13 @@ type PathYears struct {
 	Years      []int  `json:"years"`
 }
 
+type HostStats struct {
+	Host  string      `json:"host"`
+	Paths []PathYears `json:"paths"`
+}
+
 type RootResponse struct {
-	Data []PathStats `json:"data"`
+	Data []HostStats `json:"data"`
 }
 
 type MonthStats struct {
@@ -146,21 +152,59 @@ func initDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Create table if not exists with UNIQUE constraint for UPSERT
-	// Added avg logic check: Average is calculated on read, so we only need hits.
-	// We need path, year, month.
+	// Check if 'host' column exists
+	// If not, we need to migrate
+	// We can check user_version or just try to query
+	_, err = db.Query("SELECT host FROM stats LIMIT 1")
+	if err == nil {
+		// Column exists, we are good (or check if we need index updates, but minimal for now)
+		return db, nil
+	}
+
+	// Migration needed: Recreate table with 'host'
+	log.Println("Migrating database: Adding 'host' column...")
+
+	// 1. Rename old table
+	_, err = db.Exec("ALTER TABLE stats RENAME TO stats_old")
+	if err != nil {
+		// Maybe table doesn't exist yet (fresh install)
+		// Ignore error if it's "no such table", but safer to just proceed to Create
+	}
+
+	// 2. Create new table with host in PK
 	createTableSQL := `
 	CREATE TABLE IF NOT EXISTS stats (
+		host TEXT DEFAULT 'unknown',
 		path TEXT,
 		year INTEGER,
 		month INTEGER,
 		total_hits INTEGER DEFAULT 0,
-		PRIMARY KEY (path, year, month)
+		PRIMARY KEY (host, path, year, month)
 	);
 	`
 	_, err = db.Exec(createTableSQL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new table: %v", err)
+	}
+
+	// 3. Copy data if old table exists
+	// Check if stats_old exists first to avoid error on fresh run
+	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='stats_old'").Scan(&name)
+	if err == nil {
+		_, err = db.Exec(`
+			INSERT INTO stats (host, path, year, month, total_hits)
+			SELECT 'unknown', path, year, month, total_hits FROM stats_old
+		`)
+		if err != nil {
+			return nil, fmt.Errorf("failed to copy data: %v", err)
+		}
+
+		// 4. Drop old table
+		_, err = db.Exec("DROP TABLE stats_old")
+		if err != nil {
+			log.Printf("Warning: Failed to drop stats_old: %v", err)
+		}
 	}
 
 	return db, nil
@@ -173,13 +217,13 @@ func (app *App) worker() {
 
 		// UPSERT Query
 		query := `
-		INSERT INTO stats (path, year, month, total_hits)
-		VALUES (?, ?, ?, 1)
-		ON CONFLICT(path, year, month)
+		INSERT INTO stats (host, path, year, month, total_hits)
+		VALUES (?, ?, ?, ?, 1)
+		ON CONFLICT(host, path, year, month)
 		DO UPDATE SET total_hits = total_hits + 1;
 		`
 
-		_, err := app.DB.Exec(query, hit.Path, year, int(month))
+		_, err := app.DB.Exec(query, hit.Host, hit.Path, year, int(month))
 		if err != nil {
 			log.Printf("Error recording hit: %v", err)
 		}
@@ -239,9 +283,15 @@ func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	// e.g., /v3/cal/today -> /v3, /v2/quran/ayat/acak -> /v2
 	pathPrefix := extractPathPrefix(fullPath)
 
+	// Extract Host
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+
 	// Non-blocking send
 	select {
-	case app.HitsChannel <- StatsHit{Path: pathPrefix, Time: time.Now()}:
+	case app.HitsChannel <- StatsHit{Host: host, Path: pathPrefix, Time: time.Now()}:
 	default:
 		// Channel full, drop metric to avoid blocking traffic
 		log.Println("Stats channel full, dropping hit")
@@ -258,9 +308,9 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.DB.Query(`
-		SELECT DISTINCT path, year
+		SELECT DISTINCT host, path, year
 		FROM stats
-		ORDER BY path, year
+		ORDER BY host, path, year
 	`)
 	if err != nil {
 		jsonError(w, "Database error", http.StatusInternalServerError)
@@ -268,24 +318,41 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// Aggregate data
-	statsMap := make(map[string][]int)
+	// Aggregate data: Host -> Path -> Years
+	type HostData struct {
+		Paths map[string][]int
+	}
+	// map[host] -> HostData
+	dataMap := make(map[string]*HostData)
+
 	for rows.Next() {
+		var host string
 		var path string
 		var year int
-		if err := rows.Scan(&path, &year); err != nil {
+		if err := rows.Scan(&host, &path, &year); err != nil {
 			continue
 		}
 
-		statsMap[path] = append(statsMap[path], year)
+		if _, exists := dataMap[host]; !exists {
+			dataMap[host] = &HostData{Paths: make(map[string][]int)}
+		}
+
+		dataMap[host].Paths[path] = append(dataMap[host].Paths[path], year)
 	}
 
-	// Convert map to slice of PathYears
-	var result []PathYears
-	for path, years := range statsMap {
-		result = append(result, PathYears{
-			PathPrefix: path,
-			Years:      years,
+	// Convert map to slice of HostStats
+	var result []HostStats
+	for host, hData := range dataMap {
+		var paths []PathYears
+		for path, years := range hData.Paths {
+			paths = append(paths, PathYears{
+				PathPrefix: path,
+				Years:      years,
+			})
+		}
+		result = append(result, HostStats{
+			Host:  host,
+			Paths: paths,
 		})
 	}
 
@@ -309,9 +376,10 @@ func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.DB.Query(`
-		SELECT path, month, total_hits
+		SELECT path, month, SUM(total_hits)
 		FROM stats
 		WHERE year = ?
+		GROUP BY path, month
 		ORDER BY path, month ASC
 	`, year)
 	if err != nil {
@@ -465,9 +533,10 @@ func (app *App) statsDataHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Query data for specific path and year
 	rows, err := app.DB.Query(`
-		SELECT month, total_hits
+		SELECT month, SUM(total_hits)
 		FROM stats
 		WHERE path = ? AND year = ?
+		GROUP BY month
 		ORDER BY month ASC
 	`, pathPrefix, year)
 
