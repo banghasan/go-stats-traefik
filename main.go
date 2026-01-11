@@ -22,9 +22,10 @@ var BuildInfo = ""
 
 // Config holds the application configuration
 type Config struct {
-	Host   string
-	Port   int
-	DBPath string
+	Host     string
+	Port     int
+	DBPath   string
+	Timezone string
 }
 
 // StatsHit represents a single traffic hit to be recorded
@@ -36,8 +37,9 @@ type StatsHit struct {
 
 // App holds the application state
 type App struct {
-	DB          *sql.DB
-	HitsChannel chan StatsHit
+	DB           *sql.DB
+	HitsChannel  chan StatsHit
+	TimeLocation *time.Location
 }
 
 // Response structure for the new format
@@ -61,6 +63,7 @@ func main() {
 	flag.StringVar(&config.Host, "host", "0.0.0.0", "Host to listen on")
 	flag.IntVar(&config.Port, "port", 8080, "Port to listen on")
 	flag.StringVar(&config.DBPath, "db", "./stats.db", "Path to SQLite database")
+	flag.StringVar(&config.Timezone, "tz", "UTC", "Timezone (e.g., Asia/Jakarta)")
 	flag.Parse()
 
 	if showVersion {
@@ -79,10 +82,17 @@ func main() {
 	}
 	defer db.Close()
 
+	// Load Timezone
+	loc, err := time.LoadLocation(config.Timezone)
+	if err != nil {
+		log.Fatalf("Invalid timezone %s: %v", config.Timezone, err)
+	}
+
 	// Initialize App
 	app := &App{
-		DB:          db,
-		HitsChannel: make(chan StatsHit, 10000), // Buffered channel for async logging
+		DB:           db,
+		HitsChannel:  make(chan StatsHit, 10000), // Buffered channel for async logging
+		TimeLocation: loc,
 	}
 
 	// Start Worker
@@ -105,9 +115,86 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	log.Printf("Starting API Stats service on %s", addr)
 	log.Printf("Database path: %s", config.DBPath)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	log.Printf("Timezone: %s", config.Timezone)
+
+	// Wrap mux with logging middleware
+	loggedMux := loggingMiddleware(mux, loc)
+
+	if err := http.ListenAndServe(addr, loggedMux); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+// statusWriter wraps http.ResponseWriter to capture the status code
+type statusWriter struct {
+	http.ResponseWriter
+	statusCode int
+	written    bool
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	if !w.written {
+		w.statusCode = code
+		w.written = true
+		w.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if !w.written {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// loggingMiddleware logs requests in the specified format
+func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		sw := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(sw, r)
+
+		// Format Time: (11 Jan 2026, 11.50.53)
+		timestamp := start.In(loc).Format("02 Jan 2006, 15.04.05")
+
+		// Get Client IP
+		// Priority: X-Forwarded-For -> RemoteAddr
+		clientIP := r.Header.Get("X-Forwarded-For")
+		if clientIP == "" {
+			clientIP, _, _ = strings.Cut(r.RemoteAddr, ":")
+			// Strip IPv6 brackets if present
+			clientIP = strings.Trim(clientIP, "[]")
+		} else {
+			// If multiple IPs, take the first one
+			if i := strings.Index(clientIP, ","); i != -1 {
+				clientIP = strings.TrimSpace(clientIP[:i])
+			}
+		}
+
+		// Colorize Status Code
+		// Green: 200-299, Yellow: 300-399, Red: >= 400
+		var colorReset = "\033[0m"
+		var colorStatus string
+
+		switch {
+		case sw.statusCode >= 200 && sw.statusCode < 300:
+			colorStatus = "\033[32m" // Green
+		case sw.statusCode >= 300 && sw.statusCode < 400:
+			colorStatus = "\033[33m" // Yellow
+		default:
+			colorStatus = "\033[31m" // Red
+		}
+
+		// Output Format: (Time) [Status] IP Method URL
+		fmt.Printf("(%s) [%s%d%s] %s %s %s\n",
+			timestamp,
+			colorStatus, sw.statusCode, colorReset,
+			clientIP,
+			r.Method,
+			r.URL.Path,
+		)
+	})
 }
 
 // initDB initializes the SQLite database
@@ -476,11 +563,7 @@ func (app *App) apiInfoHandler(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
 		"app":     "Go Stats Traefik",
 		"version": AppVersion,
-	}
-	if BuildInfo != "" {
-		response["build_info"] = BuildInfo
-	} else {
-		response["build_info"] = "unknown"
+		"date":    time.Now().In(app.TimeLocation).Format("02 Jan 2006, 15.04.05"),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

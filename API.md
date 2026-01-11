@@ -22,7 +22,7 @@ Mengambil informasi meta tentang aplikasi.
 {
   "app": "Go Stats Traefik",
   "version": "1.0.0",
-  "build_info": "unknown"
+  "date": "11 Jan 2026, 12.01.53"
 }
 ```
 

@@ -40,8 +40,10 @@ By default:
 **Custom Flags:**
 
 ```bash
-./apistats -host 127.0.0.1 -port 9000 -db /path/to/my.db
+./bin/go-stats-traefik -host 127.0.0.1 -port 9000 -db /path/to/my.db -tz "Asia/Jakarta"
 ```
+
+- `-tz`: Set timezone for logging (default: "UTC"). Example: "Asia/Jakarta"
 
 **Check Version:**
 
@@ -76,6 +78,18 @@ docker-compose up -d
 
 ---
 
+## Development
+
+### Building with Podman
+
+This project prefers `podman` for local container builds:
+
+```bash
+podman build . -t go-stats-traefik
+```
+
+---
+
 ## Health Check
 
 The application provides a health check endpoint for monitoring:
@@ -88,9 +102,9 @@ curl http://localhost:8080/health
 
 ```json
 {
-    "status": "healthy",
-    "version": "2.0.0",
-    "timestamp": 1704672000
+  "status": "healthy",
+  "version": "2.0.0",
+  "timestamp": 1704672000
 }
 ```
 
@@ -173,29 +187,39 @@ Add the `apistats` service and configure the middleware in your
 version: "3.8"
 
 services:
-    # 1. The Stats Service
-    go-stats-traefik:
-        image: ghcr.io/banghasan/go-stats-traefik:latest
-        container_name: go-stats-traefik
-        restart: unless-stopped
-        volumes:
-            - ./data:/data # Persist SQLite database
-        command: ["-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db"]
+  # 1. The Stats Service
+  go-stats-traefik:
+    image: ghcr.io/banghasan/go-stats-traefik:latest
+    container_name: go-stats-traefik
+    restart: unless-stopped
+    volumes:
+      - ./data:/data # Persist SQLite database
+      - /usr/share/zoneinfo:/usr/share/zoneinfo:ro # Optional: Mount host timezone data
+    command: [
+      "-host",
+      "0.0.0.0",
+      "-port",
+      "8080",
+      "-db",
+      "/data/stats.db",
+      "-tz",
+      "Asia/Jakarta",
+    ]
 
-    # 2. Your Application (The one you want to track)
-    my-app:
-        image: nginxdemos/hello
-        labels:
-            - "traefik.enable=true"
-            - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
+  # 2. Your Application (The one you want to track)
+  my-app:
+    image: nginxdemos/hello
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
 
-            # Define the Middleware
-            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080/"
-            # IMPORTANT: Ensure Traefik passes the URI
-            - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
+      # Define the Middleware
+      - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080/"
+      # IMPORTANT: Ensure Traefik passes the URI
+      - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
 
-            # Apply the Middleware
-            - "traefik.http.routers.my-app.middlewares=stats-logger"
+      # Apply the Middleware
+      - "traefik.http.routers.my-app.middlewares=stats-logger"
 ```
 
 ### Using Traefik File Provider (rules.yml)
@@ -205,24 +229,24 @@ If you prefer using Traefik's file provider instead of Docker labels, create a
 
 ```yaml
 http:
-    middlewares:
-        stats-logger:
-            forwardAuth:
-                address: "http://go-stats-traefik:8080/"
-                trustForwardHeader: true
+  middlewares:
+    stats-logger:
+      forwardAuth:
+        address: "http://go-stats-traefik:8080/"
+        trustForwardHeader: true
 
-    routers:
-        my-app:
-            rule: "Host(`myapp.localhost`)"
-            service: my-app-service
-            middlewares:
-                - stats-logger
+  routers:
+    my-app:
+      rule: "Host(`myapp.localhost`)"
+      service: my-app-service
+      middlewares:
+        - stats-logger
 
-    services:
-        my-app-service:
-            loadBalancer:
-                servers:
-                    - url: "http://my-app:80"
+  services:
+    my-app-service:
+      loadBalancer:
+        servers:
+          - url: "http://my-app:80"
 ```
 
 Then reference this file in your Traefik configuration:
@@ -230,9 +254,9 @@ Then reference this file in your Traefik configuration:
 ```yaml
 # traefik.yml or docker-compose.yml
 providers:
-    file:
-        filename: /etc/traefik/rules.yml
-        watch: true
+  file:
+    filename: /etc/traefik/rules.yml
+    watch: true
 ```
 
 ### How it works
