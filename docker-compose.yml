@@ -11,10 +11,9 @@ services:
       # Ensure proper permissions by copying database file if needed
     environment:
       - TZ=Asia/Jakarta
-    command: ["-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db"]
+    command: [ "-host", "0.0.0.0", "-port", "8080", "-db", "/data/stats.db", "-tz", "Asia/Jakarta" ]
     healthcheck:
-      test:
-        ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/health || exit 1"]
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/health || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
