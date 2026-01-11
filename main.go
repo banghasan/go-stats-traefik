@@ -169,6 +169,12 @@ func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
 			}
 		}
 
+		// Extract Host from header (as used by middlewareHandler)
+		host := r.Header.Get("X-Forwarded-Host")
+		if host == "" {
+			host = r.Host
+		}
+
 		// Skip logging for /health endpoint from localhost
 		if r.URL.Path == "/health" && (clientIP == "127.0.0.1" || clientIP == "::1" || strings.HasPrefix(clientIP, "127.")) {
 			return
@@ -191,13 +197,14 @@ func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
 			colorStatus = "\033[31m" // Red
 		}
 
-		// Output Format: (Time) [Status] IP Method URL
-		fmt.Printf("(%s) [%s%d%s] %s %s %s\n",
+		// Output Format: (Time) [Status] IP Method URL Host
+		fmt.Printf("(%s) [%s%d%s] %s %s %s %s\n",
 			timestamp,
 			colorStatus, sw.statusCode, colorReset,
 			clientIP,
 			r.Method,
 			r.URL.Path,
+			host,
 		)
 	})
 }
