@@ -9,8 +9,10 @@ SQLite. Designed to be used as a **Traefik ForwardAuth Middleware**.
 - **Embedded DB**: Uses SQLite, zero-configuration needed.
 - **Middleware Mode**: Captures traffic via Traefik ForwardAuth.
 - **REST API**: Simple endpoints to view aggregated statistics.
-- **Async Logging**: Uses buffered channels to ensure it never blocks your main
-  traffic.
+  - `/`: Main statistics tree (grouped by Host).
+  - `/total`: Summary of all hits.
+  - `/year/:year`: Yearly details.
+  - `/data/:prefix`: Specific path details.
 
 ---
 
@@ -126,7 +128,10 @@ segments instead of individual endpoints.
 
 ## API Reference
 
-For complete API documentation, including all endpoints, parameters, and response formats, see the [API Documentation](API.md).
+- **GET /**: Returns all statistics grouped by Host and Path.
+- **GET /total**: Returns total hits summary.
+- **GET /year/:year**: Returns detailed statistics for a specific year.
+- **GET /data/:prefix**: Returns detailed statistics for a specific path prefix.
 
 ---
 
@@ -162,7 +167,7 @@ services:
             - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
 
             # Define the Middleware
-            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080"
+            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080/verify"
             # IMPORTANT: Ensure Traefik passes the URI
             - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
 
@@ -180,7 +185,7 @@ http:
     middlewares:
         stats-logger:
             forwardAuth:
-                address: "http://go-stats-traefik:8080"
+                address: "http://go-stats-traefik:8080/verify"
                 trustForwardHeader: true
 
     routers:

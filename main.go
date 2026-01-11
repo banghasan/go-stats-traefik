@@ -128,13 +128,13 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 
 	// Middleware Endpoint (Traefik ForwardAuth)
-	mux.HandleFunc("/", app.middlewareHandler)
+	mux.HandleFunc("/verify", app.middlewareHandler)
 
 	// API Endpoints
-	mux.HandleFunc("/api/stats/data", app.statsRootHandler)  // GET /api/stats/data (was /api/data)
-	mux.HandleFunc("/api/stats", app.statsSummaryHandler)    // GET /api/stats (new format)
-	mux.HandleFunc("/api/stats/", app.statsYearHandler)      // GET /api/stats/:year
-	mux.HandleFunc("/api/stats/data/", app.statsDataHandler) // GET /api/stats/data/:pathprefix?year=:year
+	mux.HandleFunc("/", app.statsRootHandler)         // GET / (Main Stats Tree)
+	mux.HandleFunc("/total", app.statsSummaryHandler) // GET /total
+	mux.HandleFunc("/year/", app.statsYearHandler)    // GET /year/:year
+	mux.HandleFunc("/data/", app.statsDataHandler)    // GET /data/:pathprefix?year=:year
 
 	// Start Server
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
@@ -300,9 +300,9 @@ func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// statsRootHandler handles GET /api/stats/data
+// statsRootHandler handles GET /
 func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/stats/data" && r.URL.Path != "/api/stats/data/" {
+	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -360,15 +360,15 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// statsYearHandler handles GET /api/stats/:year
+// statsYearHandler handles GET /year/:year
 func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract Year from URL
 	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 4 { // /api/stats/2026
+	if len(parts) < 3 { // /year/2026
 		jsonError(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
-	yearStr := parts[3]
+	yearStr := parts[2]
 	year, err := strconv.Atoi(yearStr)
 	if err != nil {
 		jsonError(w, "Invalid year format", http.StatusBadRequest)
@@ -458,9 +458,9 @@ type StatsSummaryResponse struct {
 	Data  []StatsSummary `json:"data"`
 }
 
-// statsSummaryHandler handles GET /api/stats
+// statsSummaryHandler handles GET /total
 func (app *App) statsSummaryHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/stats" {
+	if r.URL.Path != "/total" {
 		http.NotFound(w, r)
 		return
 	}
@@ -504,16 +504,16 @@ func (app *App) statsSummaryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// statsDataHandler handles GET /api/stats/data/:pathprefix?year=:year
+// statsDataHandler handles GET /data/:pathprefix?year=:year
 func (app *App) statsDataHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract pathprefix from URL
 	urlParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(urlParts) < 4 { // /api/stats/data/:pathprefix
+	if len(urlParts) < 2 { // /data/:pathprefix
 		jsonError(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
 
-	pathPrefix := "/" + urlParts[3]
+	pathPrefix := "/" + urlParts[1]
 
 	// Get year from query parameter, default to current year
 	yearStr := r.URL.Query().Get("year")
