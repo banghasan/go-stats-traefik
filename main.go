@@ -59,13 +59,18 @@ type PathYears struct {
 	Years      []int  `json:"years"`
 }
 
-type HostStats struct {
-	Host  string      `json:"host"`
-	Paths []PathYears `json:"paths"`
+type HostTotal struct {
+	Request int `json:"request"`
+	Prefix  int `json:"prefix"`
+}
+
+type HostSummary struct {
+	Host  string    `json:"host"`
+	Total HostTotal `json:"total"`
 }
 
 type RootResponse struct {
-	Data []HostStats `json:"data"`
+	Data []HostSummary `json:"data"`
 }
 
 type MonthStats struct {
@@ -308,9 +313,10 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := app.DB.Query(`
-		SELECT DISTINCT host, path, year
+		SELECT host, SUM(total_hits) as total, COUNT(DISTINCT path) as prefixes
 		FROM stats
-		ORDER BY host, path, year
+		GROUP BY host
+		ORDER BY total DESC
 	`)
 	if err != nil {
 		jsonError(w, "Database error", http.StatusInternalServerError)
@@ -318,41 +324,22 @@ func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// Aggregate data: Host -> Path -> Years
-	type HostData struct {
-		Paths map[string][]int
-	}
-	// map[host] -> HostData
-	dataMap := make(map[string]*HostData)
-
+	var result []HostSummary
 	for rows.Next() {
 		var host string
-		var path string
-		var year int
-		if err := rows.Scan(&host, &path, &year); err != nil {
+		var total int
+		var prefixes int
+		// handle 'unknown' host if any
+		if err := rows.Scan(&host, &total, &prefixes); err != nil {
 			continue
 		}
 
-		if _, exists := dataMap[host]; !exists {
-			dataMap[host] = &HostData{Paths: make(map[string][]int)}
-		}
-
-		dataMap[host].Paths[path] = append(dataMap[host].Paths[path], year)
-	}
-
-	// Convert map to slice of HostStats
-	var result []HostStats
-	for host, hData := range dataMap {
-		var paths []PathYears
-		for path, years := range hData.Paths {
-			paths = append(paths, PathYears{
-				PathPrefix: path,
-				Years:      years,
-			})
-		}
-		result = append(result, HostStats{
-			Host:  host,
-			Paths: paths,
+		result = append(result, HostSummary{
+			Host: host,
+			Total: HostTotal{
+				Request: total,
+				Prefix:  prefixes,
+			},
 		})
 	}
 
