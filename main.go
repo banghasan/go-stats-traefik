@@ -155,9 +155,6 @@ func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
 		sw := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(sw, r)
 
-		// Format Time: (11 Jan 2026, 11.50.53)
-		timestamp := start.In(loc).Format("02 Jan 2006, 15.04.05")
-
 		// Get Client IP
 		// Priority: X-Forwarded-For -> RemoteAddr
 		clientIP := r.Header.Get("X-Forwarded-For")
@@ -171,6 +168,14 @@ func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
 				clientIP = strings.TrimSpace(clientIP[:i])
 			}
 		}
+
+		// Skip logging for /health endpoint from localhost
+		if r.URL.Path == "/health" && (clientIP == "127.0.0.1" || clientIP == "::1" || strings.HasPrefix(clientIP, "127.")) {
+			return
+		}
+
+		// Format Time: (11 Jan 2026, 11.50.53)
+		timestamp := start.In(loc).Format("02 Jan 2006, 15.04.05")
 
 		// Colorize Status Code
 		// Green: 200-299, Yellow: 300-399, Red: >= 400
