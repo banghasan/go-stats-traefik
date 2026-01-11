@@ -128,10 +128,35 @@ segments instead of individual endpoints.
 
 ## API Reference
 
-- **GET /**: Returns all statistics grouped by Host and Path.
-- **GET /total**: Returns total hits summary.
-- **GET /year/:year**: Returns detailed statistics for a specific year.
-- **GET /data/:prefix**: Returns detailed statistics for a specific path prefix.
+- **GET /**: Returns stats for ALL hosts.
+- **GET /:host**: Returns stats for a specific host (e.g., `/api.test.com`).
+
+### Query Parameters
+
+| Parameter | Default | Description                                                  |
+| --------- | ------- | ------------------------------------------------------------ |
+| `year`    | (All)   | Filter by specific year (e.g., `?year=2025`)                 |
+| `prefix`  | (All)   | Filter by path prefix (e.g., `?prefix=/v1`)                  |
+| `all`     | `0`     | If `1` or `true`, show ALL paths. Default shows Top 20 only. |
+
+### Response Format
+
+```json
+[
+  {
+    "host": "api.test.com",
+    "total": 1500,
+    "data": [
+      {
+        "prefix": "/v1",
+        "total": 500,
+        "tahun": [2024, 2025]
+      },
+      ...
+    ]
+  }
+]
+```
 
 ---
 

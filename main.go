@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,54 +40,17 @@ type App struct {
 	HitsChannel chan StatsHit
 }
 
-// Response structures for API
-type YearStats struct {
-	Year  int     `json:"year"`
-	Total int     `json:"total"`
-	Avg   float64 `json:"avg"`
-}
-
-type PathStats struct {
-	PathPrefix string      `json:"pathprefix"`
-	Years      []YearStats `json:"years"`
-}
-
 // Response structure for the new format
-type PathYears struct {
-	PathPrefix string `json:"pathprefix"`
-	Years      []int  `json:"years"`
+type PrefixData struct {
+	Prefix string `json:"prefix"`
+	Total  int    `json:"total"`
+	Tahun  []int  `json:"tahun"`
 }
 
-type HostTotal struct {
-	Request int `json:"request"`
-	Prefix  int `json:"prefix"`
-}
-
-type HostSummary struct {
-	Host  string    `json:"host"`
-	Total HostTotal `json:"total"`
-}
-
-type RootResponse struct {
-	Data []HostSummary `json:"data"`
-}
-
-type MonthStats struct {
-	Month int     `json:"month"`
-	Total int     `json:"total"`
-	Avg   float64 `json:"avg"`
-}
-
-type YearDetailStats struct {
-	PathPrefix string       `json:"pathprefix"`
-	Year       int          `json:"year"`
-	Total      int          `json:"total"`
-	Avg        float64      `json:"avg"`
-	Months     []MonthStats `json:"months"`
-}
-
-type YearResponse struct {
-	Data []YearDetailStats `json:"data"`
+type HostData struct {
+	Host  string       `json:"host"`
+	Total int          `json:"total"`
+	Data  []PrefixData `json:"data"`
 }
 
 func main() {
@@ -136,10 +98,7 @@ func main() {
 	mux.HandleFunc("/verify", app.middlewareHandler)
 
 	// API Endpoints
-	mux.HandleFunc("/", app.statsRootHandler)         // GET / (Main Stats Tree)
-	mux.HandleFunc("/total", app.statsSummaryHandler) // GET /total
-	mux.HandleFunc("/year/", app.statsYearHandler)    // GET /year/:year
-	mux.HandleFunc("/data/", app.statsDataHandler)    // GET /data/:pathprefix?year=:year
+	mux.HandleFunc("/", app.statsHandler) // Catch-all for / and /:host
 
 	// Start Server
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
@@ -305,270 +264,194 @@ func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// statsRootHandler handles GET /
-func (app *App) statsRootHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+// statsHandler handles GET / and GET /:host
+func (app *App) statsHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. Identify Host from URL Path
+	// URL: / -> host="" (all hosts)
+	// URL: /api.test.com -> host="api.test.com"
+	pathParam := strings.Trim(r.URL.Path, "/")
+	targetHost := ""
+	if pathParam != "" && pathParam != "verify" && pathParam != "health" {
+		targetHost = pathParam
 	}
 
-	rows, err := app.DB.Query(`
-		SELECT host, SUM(total_hits) as total, COUNT(DISTINCT path) as prefixes
+	// 2. Parse Query Params
+	query := r.URL.Query()
+	yearParam := query.Get("year") // Empty means all years
+	prefixParam := query.Get("prefix")
+	allParam := query.Get("all")
+	isAll := allParam == "1" || allParam == "true"
+
+	// 3a. Build Host Totals Query (ignores year/prefix filters)
+	var totalQuery strings.Builder
+	totalQuery.WriteString(`
+		SELECT host, SUM(total_hits)
 		FROM stats
-		GROUP BY host
-		ORDER BY total DESC
+		WHERE 1=1
 	`)
+	var totalArgs []interface{}
+	if targetHost != "" {
+		totalQuery.WriteString(" AND host = ?")
+		totalArgs = append(totalArgs, targetHost)
+	}
+	totalQuery.WriteString(" GROUP BY host")
+
+	// Execute Totals Query
+	hostTotals := make(map[string]int)
+	rowsTotal, err := app.DB.Query(totalQuery.String(), totalArgs...)
 	if err != nil {
 		jsonError(w, "Database error", http.StatusInternalServerError)
+		log.Printf("DB Error (Totals): %v", err)
 		return
 	}
-	defer rows.Close()
+	defer rowsTotal.Close()
 
-	var result []HostSummary
-	for rows.Next() {
-		var host string
-		var total int
-		var prefixes int
-		// handle 'unknown' host if any
-		if err := rows.Scan(&host, &total, &prefixes); err != nil {
-			continue
+	for rowsTotal.Next() {
+		var h string
+		var t int
+		if err := rowsTotal.Scan(&h, &t); err == nil {
+			hostTotals[h] = t
 		}
-
-		result = append(result, HostSummary{
-			Host: host,
-			Total: HostTotal{
-				Request: total,
-				Prefix:  prefixes,
-			},
-		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
-
-// statsYearHandler handles GET /year/:year
-func (app *App) statsYearHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract Year from URL
-	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 3 { // /year/2026
-		jsonError(w, "Invalid URL", http.StatusBadRequest)
-		return
-	}
-	yearStr := parts[2]
-	year, err := strconv.Atoi(yearStr)
-	if err != nil {
-		jsonError(w, "Invalid year format", http.StatusBadRequest)
-		return
-	}
-
-	rows, err := app.DB.Query(`
-		SELECT path, month, SUM(total_hits)
+	// 3b. Build Detailed Query (respects all filters)
+	var sqlQuery strings.Builder
+	sqlQuery.WriteString(`
+		SELECT host, path, year, SUM(total_hits) as total
 		FROM stats
-		WHERE year = ?
-		GROUP BY path, month
-		ORDER BY path, month ASC
-	`, year)
-	if err != nil {
-		jsonError(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	// Map: Path -> Months
-	type TempData struct {
-		Total  int
-		Months []MonthStats
-	}
-	dataMap := make(map[string]*TempData)
-
-	for rows.Next() {
-		var path string
-		var month int
-		var total int
-		if err := rows.Scan(&path, &month, &total); err != nil {
-			continue
-		}
-
-		if _, exists := dataMap[path]; !exists {
-			dataMap[path] = &TempData{Total: 0, Months: []MonthStats{}}
-		}
-
-		// Avg per month (hits per day in that month?)
-		// Let's assume avg hits/day in that month (30 days approx)
-		avg := math.Ceil(float64(total) / 30.0)
-
-		dataMap[path].Months = append(dataMap[path].Months, MonthStats{
-			Month: month,
-			Total: total,
-			Avg:   avg,
-		})
-		dataMap[path].Total += total
-	}
-
-	resp := YearResponse{Data: make([]YearDetailStats, 0)}
-	for path, temp := range dataMap {
-		// Calculate yearly avg (e.g., total / 12)
-		yearAvg := math.Ceil(float64(temp.Total) / 12.0)
-
-		resp.Data = append(resp.Data, YearDetailStats{
-			PathPrefix: path,
-			Year:       year,
-			Total:      temp.Total,
-			Avg:        yearAvg,
-			Months:     temp.Months,
-		})
-	}
-
-	// Check if empty
-	if len(resp.Data) == 0 {
-		// Prompt says: "Jika data kosong ..., kembalikan JSON error"
-		// Actually prompt says "Jika data kosong atau tahun salah, kembalikan JSON error"
-		// If valid year but no data, maybe return empty list? But prompt implies error.
-		// We'll return empty list as standard API behavior, but if strict:
-		// jsonError(w, "No data for this year", http.StatusNotFound)
-		// Let's return empty Data array as initialized.
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// StatsSummary represents the new format for /api/stats
-type StatsSummary struct {
-	PathPrefix string `json:"pathprefix"`
-	Total      int    `json:"total"`
-}
-
-type StatsSummaryResponse struct {
-	Total int            `json:"total"`
-	Data  []StatsSummary `json:"data"`
-}
-
-// statsSummaryHandler handles GET /total
-func (app *App) statsSummaryHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/total" {
-		http.NotFound(w, r)
-		return
-	}
-
-	rows, err := app.DB.Query(`
-		SELECT path, SUM(total_hits) as total
-		FROM stats
-		GROUP BY path
-		ORDER BY path
+		WHERE 1=1
 	`)
+
+	var args []interface{}
+
+	if targetHost != "" {
+		sqlQuery.WriteString(" AND host = ?")
+		args = append(args, targetHost)
+	}
+
+	if yearParam != "" {
+		year, err := strconv.Atoi(yearParam)
+		if err == nil {
+			sqlQuery.WriteString(" AND year = ?")
+			args = append(args, year)
+		}
+	}
+
+	if prefixParam != "" {
+		sqlQuery.WriteString(" AND path = ?")
+		args = append(args, prefixParam)
+	}
+
+	sqlQuery.WriteString(" GROUP BY host, path, year")
+
+	// 4. Execute Query
+	rows, err := app.DB.Query(sqlQuery.String(), args...)
 	if err != nil {
 		jsonError(w, "Database error", http.StatusInternalServerError)
+		log.Printf("DB Error: %v", err)
 		return
 	}
 	defer rows.Close()
 
-	var result []StatsSummary
-	totalAll := 0
+	// 5. Aggregate Data In-Memory
+	// Structure: map[host] -> map[path] -> {Total, Years[]}
+	type TempPathData struct {
+		Total int
+		Years []int
+	}
+	// map[host]map[path]*TempPathData
+	agg := make(map[string]map[string]*TempPathData)
 
 	for rows.Next() {
-		var path string
-		var total int
-		if err := rows.Scan(&path, &total); err != nil {
+		var h, p string
+		var y, t int
+		if err := rows.Scan(&h, &p, &y, &t); err != nil {
 			continue
 		}
 
-		result = append(result, StatsSummary{
-			PathPrefix: path,
-			Total:      total,
+		if agg[h] == nil {
+			agg[h] = make(map[string]*TempPathData)
+		}
+		if agg[h][p] == nil {
+			agg[h][p] = &TempPathData{Years: []int{}}
+		}
+
+		agg[h][p].Total += t
+		agg[h][p].Years = append(agg[h][p].Years, y)
+	}
+
+	// 6. Format Response
+	// 6. Format Response
+	response := make([]HostData, 0)
+
+	for h, paths := range agg {
+		hostTotal := hostTotals[h]
+
+		// Fallback if needed
+		if hostTotal == 0 && len(paths) > 0 {
+			for _, d := range paths {
+				hostTotal += d.Total
+			}
+		}
+
+		var prefixList []PrefixData
+
+		for p, data := range paths {
+			// hostTotal += data.Total (removed)
+
+			// Deduplicate years (just in case, though Group By host,path,year implies unique rows)
+			// But Go appends.
+
+			prefixList = append(prefixList, PrefixData{
+				Prefix: p,
+				Total:  data.Total,
+				Tahun:  data.Years,
+			})
+		}
+
+		// Sort PrefixList by Total DESC
+		// Simple bubble sort or Slice sort
+		// We'll use a simple selection sort logic or implement sort.Interface if huge.
+		// For brevity, let's use a quick inline sort wrapper?
+		// Actually best to import "sort".
+		// Since I cannot add import easily without messing up lines, I will assume "sort" is needed.
+		// Wait, "sort" is NOT in imports. "strings" is.
+		// I'll stick to simple logic or just output unsorted?
+		// User asked: "order by total request, top 20 saja (default)"
+		// I MUST sort. I will add "sort" to imports in a separate step or try to bubble sort here if list small.
+		// Bubble sort is fine for API response sizes usually.
+		for i := 0; i < len(prefixList)-1; i++ {
+			for j := 0; j < len(prefixList)-i-1; j++ {
+				if prefixList[j].Total < prefixList[j+1].Total {
+					prefixList[j], prefixList[j+1] = prefixList[j+1], prefixList[j]
+				}
+			}
+		}
+
+		// Limit to top 20
+		if !isAll && len(prefixList) > 20 {
+			prefixList = prefixList[:20]
+		}
+
+		response = append(response, HostData{
+			Host:  h,
+			Total: hostTotal,
+			Data:  prefixList,
 		})
-
-		totalAll += total
 	}
 
-	resp := StatsSummaryResponse{
-		Total: totalAll,
-		Data:  result,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// statsDataHandler handles GET /data/:pathprefix?year=:year
-func (app *App) statsDataHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract pathprefix from URL
-	urlParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(urlParts) < 2 { // /data/:pathprefix
-		jsonError(w, "Invalid URL", http.StatusBadRequest)
-		return
-	}
-
-	pathPrefix := "/" + urlParts[1]
-
-	// Get year from query parameter, default to current year
-	yearStr := r.URL.Query().Get("year")
-	var year int
-
-	if yearStr == "" {
-		// Default to current year
-		year = time.Now().Year()
-	} else {
-		var err error
-		year, err = strconv.Atoi(yearStr)
-		if err != nil {
-			jsonError(w, "Invalid year format", http.StatusBadRequest)
-			return
+	// Sort Response by Host (optional, but good for consistency)
+	// (Bubble sort hosts)
+	for i := 0; i < len(response)-1; i++ {
+		for j := 0; j < len(response)-i-1; j++ {
+			if response[j].Host < response[j+1].Host {
+				response[j], response[j+1] = response[j+1], response[j]
+			}
 		}
 	}
 
-	// Query data for specific path and year
-	rows, err := app.DB.Query(`
-		SELECT month, SUM(total_hits)
-		FROM stats
-		WHERE path = ? AND year = ?
-		GROUP BY month
-		ORDER BY month ASC
-	`, pathPrefix, year)
-
-	if err != nil {
-		jsonError(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	// Accumulate data for the path
-	total := 0
-	months := []MonthStats{}
-
-	for rows.Next() {
-		var month int
-		var totalHits int
-		if err := rows.Scan(&month, &totalHits); err != nil {
-			continue
-		}
-
-		// Calculate monthly avg (hits per day in that month)
-		avg := math.Ceil(float64(totalHits) / 30.0)
-
-		months = append(months, MonthStats{
-			Month: month,
-			Total: totalHits,
-			Avg:   avg,
-		})
-
-		total += totalHits
-	}
-
-	// Calculate yearly avg
-	yearAvg := math.Ceil(float64(total) / 12.0)
-
-	resp := YearDetailStats{
-		PathPrefix: pathPrefix,
-		Year:       year,
-		Total:      total,
-		Avg:        yearAvg,
-		Months:     months,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(YearResponse{Data: []YearDetailStats{resp}})
+	json.NewEncoder(w).Encode(response)
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
