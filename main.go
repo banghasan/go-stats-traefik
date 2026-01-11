@@ -175,6 +175,15 @@ func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
 			host = r.Host
 		}
 
+		// Extract Original Path from Traefik (as used by middlewareHandler)
+		originalPath := r.Header.Get("X-Forwarded-Uri")
+		if originalPath == "" {
+			originalPath = r.Header.Get("X-Replaced-Path")
+		}
+		if originalPath == "" {
+			originalPath = r.URL.Path
+		}
+
 		// Skip logging for /health endpoint from localhost
 		if r.URL.Path == "/health" && (clientIP == "127.0.0.1" || clientIP == "::1" || strings.HasPrefix(clientIP, "127.")) {
 			return
@@ -197,14 +206,15 @@ func loggingMiddleware(next http.Handler, loc *time.Location) http.Handler {
 			colorStatus = "\033[31m" // Red
 		}
 
-		// Output Format: (Time) [Status] IP Method URL Host
-		fmt.Printf("(%s) [%s%d%s] %s %s %s %s\n",
+		// Output Format: (Time) [Status] IP Method InternalPath Host OriginalPath
+		fmt.Printf("(%s) [%s%d%s] %s %s %s %s %s\n",
 			timestamp,
 			colorStatus, sw.statusCode, colorReset,
 			clientIP,
 			r.Method,
 			r.URL.Path,
 			host,
+			originalPath,
 		)
 	})
 }
