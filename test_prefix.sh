@@ -1,7 +1,7 @@
 #!/bin/bash
-# Test Host Total Logic
+# Test New Route Structure: / (Middleware) and /api/ (Stats)
 
-echo "Testing Host Total Logic..."
+echo "Testing New Route Structure..."
 echo ""
 
 # Start server in background
@@ -10,21 +10,20 @@ go run main.go &
 PID=$!
 sleep 2
 
-# Verify Logic:
-# 1. Total hits for api.test.com should be X (sum of previous hits from other runs if DB persisted, plus new ones)
-# 2. Filter by prefix should show smaller total in 'data', but same grand 'total' in host object.
+# 1. Test Middleware (Path /)
+# Should return 200 OK
+echo "Testing Middleware (HEAD /)..."
+curl -I -H "X-Forwarded-Host: new.host.com" -H "X-Forwarded-Uri: /v1/test" http://localhost:8080/
 
-echo "Sending new hits..."
-curl -s -o /dev/null -H "X-Forwarded-Host: api.test.com" -H "X-Forwarded-Uri: /v3/cal/today?debug=1" http://localhost:8080/verify
-curl -s -o /dev/null -H "X-Forwarded-Host: api.test.com" -H "X-Forwarded-Uri: /v3/cal/tomorrow" http://localhost:8080/verify
-curl -s -o /dev/null -H "X-Forwarded-Host: api.test.com" -H "X-Forwarded-Uri: /v2/quran/ayat" http://localhost:8080/verify
+# 2. Test Stats API (Path /api/)
+echo ""
+echo "Testing Stats API (GET /api/)..."
+curlie "http://localhost:8080/api/"
 
-sleep 1
-
-echo "========================================"
-echo "GET /api.test.com?prefix=/v3"
-echo "Expect: Host Total > Data Total"
-curlie "http://localhost:8080/api.test.com?prefix=/v3"
+# 3. Test Host Stats API (Path /api/:host)
+echo ""
+echo "Testing Host Stats API (GET /api/new.host.com)..."
+curlie "http://localhost:8080/api/new.host.com"
 
 # Cleanup
 echo ""

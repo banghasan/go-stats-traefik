@@ -94,11 +94,12 @@ func main() {
 	// Health Check Endpoint
 	mux.HandleFunc("/health", healthHandler)
 
-	// Middleware Endpoint (Traefik ForwardAuth)
-	mux.HandleFunc("/verify", app.middlewareHandler)
+	// Middleware Endpoint (Traefik ForwardAuth) - Main Path
+	mux.HandleFunc("/", app.middlewareHandler)
 
 	// API Endpoints
-	mux.HandleFunc("/", app.statsHandler) // Catch-all for / and /:host
+	mux.HandleFunc("/api", app.apiInfoHandler) // GET /api (App Info, JSON)
+	mux.HandleFunc("/api/", app.statsHandler)  // GET /api/ (catch-all for stats)
 
 	// Start Server
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
@@ -264,14 +265,18 @@ func (app *App) middlewareHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// statsHandler handles GET / and GET /:host
+// statsHandler handles GET /api/ and GET /api/:host
 func (app *App) statsHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Identify Host from URL Path
-	// URL: / -> host="" (all hosts)
-	// URL: /api.test.com -> host="api.test.com"
-	pathParam := strings.Trim(r.URL.Path, "/")
+	// URL: /api/ -> host="" (all hosts)
+	// URL: /api/api.test.com -> host="api.test.com"
+
+	// Strip /api/ prefix
+	pathParam := strings.TrimPrefix(r.URL.Path, "/api/")
+	pathParam = strings.Trim(pathParam, "/") // Remove trailing slash if any
+
 	targetHost := ""
-	if pathParam != "" && pathParam != "verify" && pathParam != "health" {
+	if pathParam != "" {
 		targetHost = pathParam
 	}
 
@@ -458,4 +463,26 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// apiInfoHandler handles GET /api
+func (app *App) apiInfoHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/api" {
+		// Just in case, though ServeMux handles precise match if registered
+		http.NotFound(w, r)
+		return
+	}
+
+	response := map[string]interface{}{
+		"app":     "Go Stats Traefik",
+		"version": AppVersion,
+	}
+	if BuildInfo != "" {
+		response["build_info"] = BuildInfo
+	} else {
+		response["build_info"] = "unknown"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

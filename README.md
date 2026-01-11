@@ -7,12 +7,10 @@ SQLite. Designed to be used as a **Traefik ForwardAuth Middleware**.
 
 - **Lightweight**: Minimal memory footprint (Golang).
 - **Embedded DB**: Uses SQLite, zero-configuration needed.
-- **Middleware Mode**: Captures traffic via Traefik ForwardAuth.
+- **Middleware Mode**: Captures traffic via Traefik ForwardAuth (path `/`).
 - **REST API**: Simple endpoints to view aggregated statistics.
-  - `/`: Main statistics tree (grouped by Host).
-  - `/total`: Summary of all hits.
-  - `/year/:year`: Yearly details.
-  - `/data/:prefix`: Specific path details.
+  - `/api/`: Main statistics (grouped by Host).
+  - `/api/:host`: Statistics for specific host.
 
 ---
 
@@ -49,7 +47,7 @@ By default:
 
 ```bash
 ./bin/go-stats-traefik --version
-# Output: API Stats Version 1.0.1
+# Output: API Stats Version 2.0.0
 ```
 
 ### 3. Run with Docker
@@ -91,7 +89,7 @@ curl http://localhost:8080/health
 ```json
 {
     "status": "healthy",
-    "version": "1.0.1",
+    "version": "2.0.0",
     "timestamp": 1704672000
 }
 ```
@@ -128,8 +126,8 @@ segments instead of individual endpoints.
 
 ## API Reference
 
-- **GET /**: Returns stats for ALL hosts.
-- **GET /:host**: Returns stats for a specific host (e.g., `/api.test.com`).
+- **GET /api/**: Returns stats for ALL hosts.
+- **GET /api/:host**: Returns stats for a specific host (e.g., `/api.test.com`).
 
 ### Query Parameters
 
@@ -192,7 +190,7 @@ services:
             - "traefik.http.routers.my-app.rule=Host(`myapp.localhost`)"
 
             # Define the Middleware
-            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080/verify"
+            - "traefik.http.middlewares.stats-logger.forwardauth.address=http://go-stats-traefik:8080/"
             # IMPORTANT: Ensure Traefik passes the URI
             - "traefik.http.middlewares.stats-logger.forwardauth.trustForwardHeader=true"
 
@@ -210,7 +208,7 @@ http:
     middlewares:
         stats-logger:
             forwardAuth:
-                address: "http://go-stats-traefik:8080/verify"
+                address: "http://go-stats-traefik:8080/"
                 trustForwardHeader: true
 
     routers:

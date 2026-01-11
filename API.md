@@ -1,190 +1,120 @@
-# API Documentation - Go Stats Traefik
+# Dokumentasi API
+
+Layanan ini menyediakan API untuk memantau trafik yang melewati middleware
+Traefik.
 
 ## Base URL
-```
-http://localhost:8080/
-```
 
-## Authentication
-No authentication required.
-
-## HTTP Status Codes
-- `200`: Success
-- `400`: Bad Request
-- `404`: Not Found
-- `500`: Internal Server Error
-
----
+`/api/`
 
 ## Endpoints
 
-### 1. Health Check
-#### GET `/health`
-Check if the service is running and healthy.
+### 0. Informasi Aplikasi
 
-**Response:**
-```
+Mengambil informasi meta tentang aplikasi.
+
+- **URL**: `GET /api` (tanpa slash di akhir)
+- **Contoh**: `curl http://localhost:8080/api`
+
+**Response**:
+
+```json
 {
-  "status": "healthy",
-  "version": "1.0.1",
-  "timestamp": 1767841066
+  "app": "Go Stats Traefik",
+  "version": "1.0.0",
+  "build_info": "unknown"
 }
 ```
 
-### 2. Summary Statistics
-#### GET `/api/stats`
-Get summary statistics for all path prefixes including total hits across all years.
+### 1. Lihat Semua Host
 
-**Response:**
-```
-{
-  "total": 13,
-  "data": [
-    {
-      "pathprefix": "/unknown",
-      "total": 1
-    },
-    {
-      "pathprefix": "/v1",
-      "total": 5
-    },
-    {
-      "pathprefix": "/v2",
-      "total": 6
-    }
-  ]
-}
-```
+Mengambil statistik dari **seluruh host** yang terekam.
 
-### 3. Path and Year Combinations
-#### GET `/api/stats/data`
-Get all unique path prefixes and available years in the database.
+- **URL**: `GET /api/`
+- **Contoh**: `curl http://localhost:8080/api/`
 
-**Response:**
-```
+**Response**:
+
+```json
 [
   {
-    "pathprefix": "/",
-    "years": [2025, 2026]
+    "host": "api.test.com",
+    "total": 1500,
+    "data": [ ... ]
   },
   {
-    "pathprefix": "/v1",
-    "years": [2026]
-  },
-  {
-    "pathprefix": "/v2",
-    "years": [2025, 2026, 2027]
+    "host": "web.example.com",
+    "total": 850,
+    "data": [ ... ]
   }
 ]
 ```
 
-### 4. Yearly Details
-#### GET `/api/stats/{year}`
-Get detailed monthly statistics for a specific year.
+> **Catatan**: Field `total` pada level host (atas) adalah total hit
+> **keseluruhan** untuk host tersebut (tidak terpengaruh filter).
 
-**Response:**
-```
-{
-  "data": [
-    {
-      "pathprefix": "/v1",
-      "year": 2026,
-      "total": 1500,
-      "avg": 125,
-      "months": [
-        {
-          "month": 1,
-          "total": 500,
-          "avg": 16.1
-        },
-        {
-          "month": 2,
-          "total": 1000,
-          "avg": 35.7
-        }
-      ]
-    }
-  ]
-}
+### 2. Lihat Detail Host
+
+Mengambil statistik untuk **satu host spesifik**.
+
+- **URL**: `GET /api/:host`
+- **Contoh**: `curl http://localhost:8080/api/api.test.com`
+
+### Parameter (Query Params)
+
+Anda bisa menyaring data `data` (prefix path) menggunakan parameter berikut:
+
+| Parameter | Contoh        | Deskripsi                                                                                         |
+| --------- | ------------- | ------------------------------------------------------------------------------------------------- |
+| `year`    | `?year=2025`  | Menampilkan data hanya untuk tahun tertentu. Default: semua tahun.                                |
+| `prefix`  | `?prefix=/v1` | Menampilkan hanya path prefix tertentu.                                                           |
+| `all`     | `?all=1`      | Jika `1` atau `true`, menampilkan **semua** path. Default: hanya menampilkan Top 20 path teratas. |
+
+### Contoh Request Lengkap
+
+**1. Tampilkan detail host `api.test.com` untuk tahun 2025 saja:**
+
+```bash
+curl "http://localhost:8080/api/api.test.com?year=2025"
 ```
 
-### 5. Path-Specific Data
-#### GET `/api/stats/data/{pathprefix}?year={year}`
-Get monthly statistics for a specific path prefix. The `year` parameter is optional and defaults to the current year.
+**2. Tampilkan semua path (tanpa batas Top 20) untuk host tersebut:**
 
-**Parameters:**
-- `year` (optional): The year to retrieve data for (e.g., `2026`)
-
-**Response:**
-```
-{
-  "data": [
-    {
-      "pathprefix": "/v2",
-      "year": 2026,
-      "total": 1,
-      "avg": 1,
-      "months": [
-        {
-          "month": 1,
-          "total": 1,
-          "avg": 1
-        }
-      ]
-    }
-  ]
-}
+```bash
+curl "http://localhost:8080/api/api.test.com?all=1"
 ```
 
----
+**3. Cari spesifik prefix `/v3` pada host tersebut:**
 
-## Middleware Endpoint
-
-### 6. ForwardAuth Middleware
-#### GET `/`
-This endpoint is used as a Traefik ForwardAuth middleware. It captures traffic statistics and allows the request to proceed by returning a 200 status.
-
-**Headers Used:**
-- `X-Forwarded-Uri`: The original path of the request
-- `X-Replaced-Path`: Alternative header for the original path
-
----
-
-## Usage Examples with curlie
-
-### Health Check
-```curlie
-GET /health
+```bash
+curl "http://localhost:8080/api/api.test.com?prefix=/v3"
 ```
 
-### Summary Statistics
-```curlie
-GET /api/stats
+Response:
+
+```json
+[
+  {
+    "host": "api.test.com",
+    "total": 5000,
+    "data": [
+      {
+        "prefix": "/v3",
+        "total": 120,
+        "tahun": [2025, 2026]
+      }
+    ]
+  }
+]
 ```
 
-### Path and Year Combinations
-```curlie
-GET /api/stats/data
-```
+_(Ingat: `total` 5000 adalah total global host, `total` 120 adalah total untuk
+/v3)_
 
-### Yearly Details for 2026
-```curlie
-GET /api/stats/2026
-```
+### Respon Kosong
 
-### Path-Specific Data for /v1
-```curlie
-GET /api/stats/data/v1
-```
+Jika data tidak ditemukan, API akan mengembalikan array kosong:
 
-### Path-Specific Data for /v2 in Year 2026
-```curlie
-GET /api/stats/data/v2?year=2026
-```
-
-### Using as Middleware
-```curlie
-GET /
-Headers:
-  X-Forwarded-Uri: /api/v1/test
+```json
+[]
 ```
